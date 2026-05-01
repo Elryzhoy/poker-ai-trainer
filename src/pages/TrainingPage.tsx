@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, CheckCircle, XCircle, RotateCcw, Brain, Target, Zap } from 'lucide-react';
+import { saveTrainingResult, getTrainingStats } from '@/lib/localStorage';
 
 interface TrainingQuestion {
   id: string;
@@ -36,26 +37,19 @@ export function TrainingPage() {
   const [selectedWeakAreas, setSelectedWeakAreas] = useState<string[]>([]);
 
   const WEAK_AREAS = [
-    { value: 'preflop', label: 'Preflop' },
-    { value: 'postflop', label: 'Postflop' },
-    { value: 'bet_sizing', label: 'Bet Sizing' },
-    { value: 'position', label: 'Position' },
-    { value: 'range', label: 'Range' },
-    { value: 'bluffing', label: 'Bluffing' },
-    { value: 'value_betting', label: 'Value Betting' },
-    { value: 'river_play', label: 'River Play' },
+    { value: 'preflop', label: '翻前' },
+    { value: 'postflop', label: '翻后' },
+    { value: 'bet_sizing', label: '下注大小' },
+    { value: 'position', label: '位置' },
+    { value: 'range', label: '范围' },
+    { value: 'bluffing', label: '诈唬' },
+    { value: 'value_betting', label: '价值下注' },
+    { value: 'river_play', label: '河牌' },
   ];
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const response = await fetch('/api/training/stats');
-      const data = await response.json();
-      if (response.ok) {
-        setStats(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-    }
+  const fetchStats = useCallback(() => {
+    const data = getTrainingStats();
+    setStats(data);
   }, []);
 
   const generateQuestions = useCallback(async () => {
@@ -87,35 +81,30 @@ export function TrainingPage() {
     }
   }, [selectedWeakAreas]);
 
-  const submitAnswer = useCallback(async () => {
+  const submitAnswer = useCallback(() => {
     if (!currentQuestion || !userAnswer.trim()) return;
 
     setIsLoading(true);
-    try {
-      const response = await fetch('/api/training/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          questionId: currentQuestion.id,
-          answer: userAnswer,
-          correctAnswer: currentQuestion.correctAnswer,
-          explanation: currentQuestion.explanation,
-        }),
-      });
+    
+    // 检查答案（简单字符串匹配）
+    const isCorrect = userAnswer.toLowerCase().includes(currentQuestion.correctAnswer.toLowerCase()) ||
+                      currentQuestion.correctAnswer.toLowerCase().includes(userAnswer.toLowerCase());
+    
+    // 保存到本地存储
+    saveTrainingResult({
+      questionId: currentQuestion.id,
+      answer: userAnswer,
+      isCorrect,
+      weakArea: currentQuestion.weakArea
+    });
 
-      const data = await response.json();
-      if (response.ok) {
-        setResult({
-          correct: data.isCorrect,
-          explanation: data.explanation,
-        });
-        fetchStats();
-      }
-    } catch (error) {
-      console.error('Failed to submit answer:', error);
-    } finally {
-      setIsLoading(false);
-    }
+    setResult({
+      correct: isCorrect,
+      explanation: currentQuestion.explanation
+    });
+
+    fetchStats();
+    setIsLoading(false);
   }, [currentQuestion, userAnswer, fetchStats]);
 
   const nextQuestion = useCallback(() => {
@@ -144,20 +133,20 @@ export function TrainingPage() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">AI Training</h1>
+        <h1 className="text-3xl font-bold mb-2">AI训练</h1>
         <p className="text-muted-foreground">
-          Personalized poker training based on your weak areas
+          基于你的弱项进行个性化扑克训练
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Stats Sidebar */}
+        {/* 左侧统计 */}
         <div className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Brain className="h-5 w-5" />
-                Your Stats
+                你的统计
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -165,56 +154,60 @@ export function TrainingPage() {
                 <>
                   <div className="text-center">
                     <div className="text-3xl font-bold">{stats.accuracy}%</div>
-                    <div className="text-sm text-muted-foreground">Accuracy</div>
+                    <div className="text-sm text-muted-foreground">正确率</div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-center">
                     <div>
                       <div className="text-xl font-bold">{stats.totalQuestions}</div>
-                      <div className="text-xs text-muted-foreground">Questions</div>
+                      <div className="text-xs text-muted-foreground">总题数</div>
                     </div>
                     <div>
                       <div className="text-xl font-bold">{stats.streak}</div>
-                      <div className="text-xs text-muted-foreground">Streak</div>
+                      <div className="text-xs text-muted-foreground">连续正确</div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-sm font-medium mb-2">Weak Areas</div>
-                    <div className="flex flex-wrap gap-1">
-                      {stats.weakAreas.map((area) => (
-                        <Badge key={area} variant="destructive" className="text-xs">
-                          {area}
-                        </Badge>
-                      ))}
+                  {stats.weakAreas.length > 0 && (
+                    <div>
+                      <div className="text-sm font-medium mb-2">弱项</div>
+                      <div className="flex flex-wrap gap-1">
+                        {stats.weakAreas.map((area) => (
+                          <Badge key={area} variant="destructive" className="text-xs">
+                            {area}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium mb-2">Strong Areas</div>
-                    <div className="flex flex-wrap gap-1">
-                      {stats.strongAreas.map((area) => (
-                        <Badge key={area} variant="default" className="text-xs">
-                          {area}
-                        </Badge>
-                      ))}
+                  )}
+                  {stats.strongAreas.length > 0 && (
+                    <div>
+                      <div className="text-sm font-medium mb-2">强项</div>
+                      <div className="flex flex-wrap gap-1">
+                        {stats.strongAreas.map((area) => (
+                          <Badge key={area} variant="default" className="text-xs">
+                            {area}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               ) : (
                 <div className="text-center text-muted-foreground">
-                  Loading stats...
+                  加载中...
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Weak Area Selection */}
+          {/* 弱项选择 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="h-5 w-5" />
-                Focus Areas
+                训练重点
               </CardTitle>
               <CardDescription>
-                Select areas to focus on
+                选择要重点训练的方面
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -233,7 +226,7 @@ export function TrainingPage() {
             </CardContent>
           </Card>
 
-          {/* Generate Button */}
+          {/* 生成按钮 */}
           <Button 
             onClick={generateQuestions} 
             disabled={isGenerating}
@@ -242,24 +235,24 @@ export function TrainingPage() {
             {isGenerating ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating...
+                生成中...
               </>
             ) : (
               <>
                 <Zap className="mr-2 h-4 w-4" />
-                Generate Training Set
+                生成训练题
               </>
             )}
           </Button>
         </div>
 
-        {/* Main Training Area */}
+        {/* 右侧训练区 */}
         <div className="lg:col-span-2 space-y-4">
           {currentQuestion ? (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Training Question</CardTitle>
+                  <CardTitle>训练题</CardTitle>
                   <div className="flex gap-2">
                     <Badge variant="outline">{currentQuestion.difficulty}</Badge>
                     <Badge variant="secondary">{currentQuestion.weakArea}</Badge>
@@ -267,42 +260,42 @@ export function TrainingPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Scenario */}
+                {/* 场景描述 */}
                 <div className="p-4 bg-muted rounded-lg">
-                  <div className="text-sm font-medium mb-2">Scenario</div>
+                  <div className="text-sm font-medium mb-2">场景</div>
                   <p>{currentQuestion.scenario}</p>
                 </div>
 
-                {/* Question */}
+                {/* 问题 */}
                 <div>
-                  <div className="text-sm font-medium mb-2">Question</div>
+                  <div className="text-sm font-medium mb-2">问题</div>
                   <p className="font-medium">{currentQuestion.question}</p>
                 </div>
 
-                {/* Answer Input */}
+                {/* 答案输入 */}
                 {!result && (
                   <div className="space-y-2">
-                    <div className="text-sm font-medium">Your Answer</div>
+                    <div className="text-sm font-medium">你的答案</div>
                     <Textarea
                       value={userAnswer}
                       onChange={(e) => setUserAnswer(e.target.value)}
-                      placeholder="Type your answer..."
+                      placeholder="输入你的答案..."
                       rows={3}
                     />
                     <Button onClick={submitAnswer} disabled={isLoading || !userAnswer.trim()}>
                       {isLoading ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Checking...
+                          检查中...
                         </>
                       ) : (
-                        'Submit Answer'
+                        '提交答案'
                       )}
                     </Button>
                   </div>
                 )}
 
-                {/* Result */}
+                {/* 结果 */}
                 {result && (
                   <div className="space-y-4">
                     <Alert variant={result.correct ? 'default' : 'destructive'}>
@@ -312,30 +305,30 @@ export function TrainingPage() {
                         <XCircle className="h-4 w-4" />
                       )}
                       <AlertDescription>
-                        {result.correct ? 'Correct!' : 'Incorrect!'}
+                        {result.correct ? '回答正确！' : '回答错误！'}
                       </AlertDescription>
                     </Alert>
 
                     <div className="p-4 bg-muted rounded-lg">
-                      <div className="text-sm font-medium mb-2">Explanation</div>
+                      <div className="text-sm font-medium mb-2">解释</div>
                       <p className="text-sm">{result.explanation}</p>
                     </div>
 
                     <div className="p-4 bg-muted rounded-lg">
-                      <div className="text-sm font-medium mb-2">Correct Answer</div>
+                      <div className="text-sm font-medium mb-2">正确答案</div>
                       <p className="text-sm font-mono">{currentQuestion.correctAnswer}</p>
                     </div>
 
                     <Button onClick={nextQuestion}>
                       <RotateCcw className="mr-2 h-4 w-4" />
-                      Next Question
+                      下一题
                     </Button>
                   </div>
                 )}
 
-                {/* Progress */}
+                {/* 进度 */}
                 <div className="text-sm text-muted-foreground text-center">
-                  Question {questions.findIndex(q => q.id === currentQuestion.id) + 1} of {questions.length}
+                  第 {questions.findIndex(q => q.id === currentQuestion.id) + 1} 题 / 共 {questions.length} 题
                 </div>
               </CardContent>
             </Card>
@@ -343,20 +336,20 @@ export function TrainingPage() {
             <Card>
               <CardContent className="p-8 text-center">
                 <Brain className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-medium mb-2">Ready to Train?</h3>
+                <h3 className="text-lg font-medium mb-2">准备开始训练？</h3>
                 <p className="text-muted-foreground mb-4">
-                  Select your weak areas and generate a training set to get started.
+                  选择你的弱项，然后点击"生成训练题"开始。
                 </p>
                 <Button onClick={generateQuestions} disabled={isGenerating}>
                   {isGenerating ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating...
+                      生成中...
                     </>
                   ) : (
                     <>
                       <Zap className="mr-2 h-4 w-4" />
-                      Start Training
+                      开始训练
                     </>
                   )}
                 </Button>
