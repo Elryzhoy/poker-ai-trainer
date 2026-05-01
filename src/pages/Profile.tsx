@@ -64,7 +64,7 @@ export function Profile() {
         <Avatar className="h-24 w-24">
           <AvatarImage src={userProfile?.photoURL || undefined} />
           <AvatarFallback className="bg-poker-green text-white text-2xl">
-            {getInitials(userProfile?.displayName)}
+            {getInitials(userProfile?.displayName ?? null)}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1">

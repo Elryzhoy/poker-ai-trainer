@@ -107,7 +107,7 @@ export function Navbar() {
                     <Avatar className="h-10 w-10">
                       <AvatarImage src={userProfile?.photoURL || undefined} />
                       <AvatarFallback className="bg-poker-green text-white">
-                        {getInitials(userProfile?.displayName)}
+                        {getInitials(userProfile?.displayName ?? null)}
                       </AvatarFallback>
                     </Avatar>
                   </Button>
