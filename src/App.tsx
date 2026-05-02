@@ -11,6 +11,7 @@ import { Profile } from '@/pages/Profile';
 import { TrainingPage } from '@/pages/TrainingPage';
 import { HandHistoryUpload } from '@/components/HandHistoryUpload';
 import { RangeTraining } from '@/components/RangeTraining';
+import { PokerGame } from '@/components/PokerGame';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
                 <Route path="/register" element={<Register />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/training" element={<TrainingPage />} />
+                <Route path="/game" element={<PokerGame />} />
                 <Route path="/hand-history" element={
                   <div className="container mx-auto px-4 py-8">
                     <div className="mb-8">

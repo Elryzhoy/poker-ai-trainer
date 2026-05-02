@@ -75,7 +75,19 @@ export function Navbar() {
                   训练
                 </Link>
                 <Link
-                  to="/review"
+                  to="/game"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  对弈
+                </Link>
+                <Link
+                  to="/range"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  范围
+                </Link>
+                <Link
+                  to="/hand-history"
                   className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
                   复盘
@@ -184,7 +196,21 @@ export function Navbar() {
                   训练
                 </Link>
                 <Link
-                  to="/review"
+                  to="/game"
+                  className="block px-4 py-2 text-sm hover:bg-accent rounded-md"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  对弈
+                </Link>
+                <Link
+                  to="/range"
+                  className="block px-4 py-2 text-sm hover:bg-accent rounded-md"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  范围
+                </Link>
+                <Link
+                  to="/hand-history"
                   className="block px-4 py-2 text-sm hover:bg-accent rounded-md"
                   onClick={() => setMobileMenuOpen(false)}
                 >

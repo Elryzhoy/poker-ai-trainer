@@ -1,19 +1,18 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
-import { parseMultipleHands, extractKeyMoments } from '../services/handHistoryParser.js';
-import { analyzeHand, generateErrorReport } from '../services/aiAnalysis.js';
-import { supabase, isSupabaseConfigured, mockData } from '../config/supabase.js';
+import { parseMultipleHands, analyzeHandDecisions, generateHandSummary } from '../services/handHistoryParser.js';
+import { analyzeHand } from '../services/aiAnalysis.js';
 
 const router = Router();
 
 /**
  * POST /api/hand-history/upload
- * Upload and parse hand histories
+ * 上传并解析手牌历史
  */
 router.post('/upload', [
-  body('handHistory').notEmpty().withMessage('Hand history is required'),
+  body('handHistory').notEmpty().withMessage('手牌历史不能为空'),
   body('platform').optional().isString()
-], async (req, res) => {
+], (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -22,44 +21,31 @@ router.post('/upload', [
 
     const { handHistory, platform } = req.body;
     
-    // Parse hand histories
+    // 解析手牌历史
     const parsedHands = parseMultipleHands(handHistory, platform);
     
     if (parsedHands.length === 0) {
       return res.status(400).json({ 
-        error: 'No valid hand histories found in the input' 
+        error: '未找到有效的手牌记录，请检查格式' 
       });
     }
 
-    // Extract key moments for each hand
-    const handsWithMoments = parsedHands.map(hand => ({
+    // 为每手牌添加分析
+    const handsWithAnalysis = parsedHands.map(hand => ({
       ...hand,
-      keyMoments: extractKeyMoments(hand)
+      decisions: analyzeHandDecisions(hand),
+      summary: generateHandSummary(hand)
     }));
-
-    // Store in database if configured
-    if (isSupabaseConfigured()) {
-      const userId = req.user?.id; // Assuming auth middleware sets req.user
-      if (userId) {
-        await supabase.from('hand_histories').insert({
-          user_id: userId,
-          hands: handsWithMoments,
-          platform,
-          hand_count: handsWithMoments.length,
-          created_at: new Date().toISOString()
-        });
-      }
-    }
 
     res.json({
       success: true,
-      handCount: handsWithMoments.length,
-      hands: handsWithMoments
+      handCount: handsWithAnalysis.length,
+      hands: handsWithAnalysis
     });
   } catch (error) {
-    console.error('Hand history upload error:', error);
+    console.error('手牌上传错误:', error);
     res.status(500).json({ 
-      error: 'Failed to parse hand histories',
+      error: '解析手牌失败',
       message: error.message 
     });
   }
@@ -67,10 +53,10 @@ router.post('/upload', [
 
 /**
  * POST /api/hand-history/analyze
- * Analyze uploaded hand histories with AI
+ * AI分析手牌
  */
 router.post('/analyze', [
-  body('hands').isArray().withMessage('Hands array is required'),
+  body('hands').isArray().withMessage('手牌数组不能为空'),
   body('userLevel').optional().isIn(['beginner', 'intermediate', 'advanced'])
 ], async (req, res) => {
   try {
@@ -81,10 +67,10 @@ router.post('/analyze', [
 
     const { hands, userLevel = 'intermediate' } = req.body;
     
-    // Limit analysis to 100 hands for cost control
-    const handsToAnalyze = hands.slice(0, 100);
+    // 限制分析数量以控制成本
+    const handsToAnalyze = hands.slice(0, 10);
     
-    // Analyze each hand
+    // 分析每手牌
     const analyses = [];
     let totalTokens = 0;
     
@@ -96,27 +82,23 @@ router.post('/analyze', [
       });
       totalTokens += analysis.tokensUsed;
       
-      // Check token limit
+      // 检查token限制
       if (totalTokens > 10000) {
-        console.warn('Token limit reached, stopping analysis');
+        console.warn('Token限制达到，停止分析');
         break;
       }
     }
-
-    // Generate error report
-    const errorReport = await generateErrorReport(analyses);
 
     res.json({
       success: true,
       analysisCount: analyses.length,
       analyses,
-      errorReport,
       tokensUsed: totalTokens
     });
   } catch (error) {
-    console.error('Hand analysis error:', error);
+    console.error('手牌分析错误:', error);
     res.status(500).json({ 
-      error: 'Failed to analyze hands',
+      error: '分析手牌失败',
       message: error.message 
     });
   }
@@ -124,64 +106,26 @@ router.post('/analyze', [
 
 /**
  * GET /api/hand-history/stats
- * Get user's hand history statistics
+ * 获取手牌统计
  */
-router.get('/stats', async (req, res) => {
+router.get('/stats', (req, res) => {
   try {
-    const userId = req.user?.id;
-    
-    if (!userId) {
-      // Return mock stats for development
-      return res.json({
-        totalHands: 150,
-        totalSessions: 12,
-        averageEV: -0.5,
-        biggestWin: 150,
-        biggestLoss: -80,
-        winRate: 55.3,
-        vpip: 22.5,
-        pfr: 18.2
-      });
-    }
-
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('hand_histories')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-
-      // Calculate stats from hand histories
-      const stats = calculateStats(data);
-      res.json(stats);
-    } else {
-      res.json(mockData.stats || {});
-    }
+    // 返回模拟统计
+    res.json({
+      success: true,
+      stats: {
+        totalHands: 0,
+        totalSessions: 0,
+        biggestWin: 0,
+        biggestLoss: 0,
+        averageEV: 0,
+        winRate: 0
+      }
+    });
   } catch (error) {
-    console.error('Stats error:', error);
-    res.status(500).json({ error: 'Failed to get stats' });
+    console.error('统计错误:', error);
+    res.status(500).json({ error: '获取统计失败' });
   }
 });
-
-/**
- * Calculate statistics from hand history data
- */
-function calculateStats(handHistories) {
-  // This is a simplified version
-  // Real implementation would be more complex
-  return {
-    totalHands: handHistories.length * 50, // Approximate
-    totalSessions: handHistories.length,
-    averageEV: -0.3,
-    biggestWin: 200,
-    biggestLoss: -100,
-    winRate: 52.1,
-    vpip: 21.8,
-    pfr: 17.5
-  };
-}
 
 export default router;
