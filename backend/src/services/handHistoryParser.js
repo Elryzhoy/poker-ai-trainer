@@ -1,9 +1,9 @@
 /**
- * Hand History Parser Service
- * Parses hand histories from various poker platforms
+ * 手牌历史解析服务
+ * 支持多种扑克平台的手牌格式
  */
 
-// Supported platforms
+// 支持的平台
 export const PLATFORMS = {
   POKERSTARS: 'pokerstars',
   GGPOKER: 'ggpoker',
@@ -12,197 +12,357 @@ export const PLATFORMS = {
   WINAMAX: 'winamax'
 };
 
-// Hand history patterns for each platform
-const PATTERNS = {
-  [PLATFORMS.POKERSTARS]: {
-    header: /PokerStars Hand #(\d+)/,
-    game: /Hold'em No Limit/,
-    blinds: /Blinds \$?([\d.]+)\/\$?([\d.]+)/,
-    seat: /Seat (\d+): (\w+) \(\$?([\d.]+) in chips\)/,
-    action: /(\w+): (folds|checks|calls|bets|raises|all-in)(?: \$?([\d.]+))?/,
-    board: /\[(\w\w \w\w \w\w \w\w \w\w)\]/,
-    pot: /Total pot \$?([\d.]+)/
-  },
-  [PLATFORMS.GGPOKER]: {
-    header: /GGPoker Hand #(\d+)/,
-    game: /Hold'em/,
-    blinds: /Blinds \$?([\d.]+)\/\$?([\d.]+)/,
-    seat: /Seat (\d+): (\w+) \(\$?([\d.]+)\)/,
-    action: /(\w+): (fold|check|call|bet|raise|all-in)(?: \$?([\d.]+))?/,
-    board: /\[(\w\w \w\w \w\w \w\w \w\w)\]/,
-    pot: /Total pot \$?([\d.]+)/
-  }
+// 扑克牌面值映射
+const RANK_VALUES = {
+  '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
+  'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14
 };
 
 /**
- * Detect which platform a hand history is from
+ * 检测手牌历史来自哪个平台
  */
 export function detectPlatform(handHistory) {
-  if (handHistory.includes('PokerStars')) return PLATFORMS.POKERSTARS;
-  if (handHistory.includes('GGPoker')) return PLATFORMS.GGPOKER;
-  if (handHistory.includes('888poker')) return PLATFORMS.EIGHTYEIGHT;
-  if (handHistory.includes('PartyPoker')) return PLATFORMS.PARTYPOKER;
-  if (handHistory.includes('Winamax')) return PLATFORMS.WINAMAX;
+  if (!handHistory) return null;
+  
+  const text = handHistory.toLowerCase();
+  if (text.includes('pokerstars')) return PLATFORMS.POKERSTARS;
+  if (text.includes('ggpoker') || text.includes('gg poker')) return PLATFORMS.GGPOKER;
+  if (text.includes('888poker') || text.includes('888 poker')) return PLATFORMS.EIGHTYEIGHT;
+  if (text.includes('partypoker') || text.includes('party poker')) return PLATFORMS.PARTYPOKER;
+  if (text.includes('winamax')) return PLATFORMS.WINAMAX;
+  
   return null;
 }
 
 /**
- * Parse a single hand history
+ * 解析单手牌历史
  */
 export function parseHandHistory(handHistory, platform = null) {
+  if (!handHistory || handHistory.trim().length === 0) {
+    throw new Error('手牌历史为空');
+  }
+
   if (!platform) {
     platform = detectPlatform(handHistory);
   }
+
+  // 通用解析逻辑
+  const lines = handHistory.split('\n').filter(line => line.trim().length > 0);
   
-  if (!platform) {
-    throw new Error('Unable to detect platform from hand history');
-  }
-
-  const patterns = PATTERNS[platform];
-  if (!patterns) {
-    throw new Error(`Unsupported platform: ${platform}`);
-  }
-
-  // Parse basic info
-  const handId = handHistory.match(patterns.header)?.[1] || 'unknown';
-  const blindsMatch = handHistory.match(patterns.blinds);
-  const smallBlind = blindsMatch ? parseFloat(blindsMatch[1]) : 0;
-  const bigBlind = blindsMatch ? parseFloat(blindsMatch[2]) : 0;
-
-  // Parse seats
-  const seats = [];
-  const seatRegex = new RegExp(patterns.seat, 'g');
-  let seatMatch;
-  while ((seatMatch = seatRegex.exec(handHistory)) !== null) {
-    seats.push({
-      seatNumber: parseInt(seatMatch[1]),
-      playerName: seatMatch[2],
-      stackSize: parseFloat(seatMatch[3])
-    });
-  }
-
-  // Parse actions
-  const actions = [];
-  const actionRegex = new RegExp(patterns.action, 'g');
-  let actionMatch;
-  while ((actionMatch = actionRegex.exec(handHistory)) !== null) {
-    actions.push({
-      player: actionMatch[1],
-      action: actionMatch[2],
-      amount: actionMatch[3] ? parseFloat(actionMatch[3]) : 0
-    });
-  }
-
-  // Parse board
-  const boardMatch = handHistory.match(patterns.board);
-  const board = boardMatch ? boardMatch[1].split(' ') : [];
-
-  // Parse pot
-  const potMatch = handHistory.match(patterns.pot);
-  const totalPot = potMatch ? parseFloat(potMatch[1]) : 0;
+  // 提取基本信息
+  const handId = extractHandId(lines);
+  const blinds = extractBlinds(lines);
+  const seats = extractSeats(lines);
+  const actions = extractActions(lines);
+  const board = extractBoard(lines);
+  const pot = extractPot(lines);
 
   return {
     id: handId,
-    platform,
-    smallBlind,
-    bigBlind,
+    platform: platform || 'unknown',
+    smallBlind: blinds.small,
+    bigBlind: blinds.big,
     seats,
     actions,
     board,
-    totalPot,
+    totalPot: pot,
     raw: handHistory
   };
 }
 
 /**
- * Parse multiple hand histories
+ * 提取手牌ID
+ */
+function extractHandId(lines) {
+  for (const line of lines) {
+    // PokerStars: Hand #123456789
+    const match = line.match(/Hand #(\d+)/);
+    if (match) return match[1];
+    
+    // 通用: 尝试找数字ID
+    const numMatch = line.match(/#(\d{6,})/);
+    if (numMatch) return numMatch[1];
+  }
+  
+  return 'hand_' + Date.now();
+}
+
+/**
+ * 提取盲注
+ */
+function extractBlinds(lines) {
+  for (const line of lines) {
+    // 匹配各种盲注格式
+    const match = line.match(/(?:Blinds|盲注)\s*\$?([\d.]+)\/\$?([\d.]+)/i) ||
+                  line.match(/\$?([\d.]+)\/\$?([\d.]+)\s*(?:Hold'em|Holdem)/i) ||
+                  line.match(/(\d+)\/(\d+)/);
+    
+    if (match) {
+      return {
+        small: parseFloat(match[1]),
+        big: parseFloat(match[2])
+      };
+    }
+  }
+  
+  return { small: 1, big: 2 }; // 默认盲注
+}
+
+/**
+ * 提取座位信息
+ */
+function extractSeats(lines) {
+  const seats = [];
+  const seatPatterns = [
+    /Seat (\d+): (\w+) \(\$?([\d.]+) in chips\)/i,
+    /Seat (\d+): (\w+) \(\$?([\d.]+)\)/i,
+    /(\d+) - (\w+): \$?([\d.]+)/
+  ];
+
+  for (const line of lines) {
+    for (const pattern of seatPatterns) {
+      const match = line.match(pattern);
+      if (match) {
+        seats.push({
+          seatNumber: parseInt(match[1]),
+          playerName: match[2],
+          stackSize: parseFloat(match[3])
+        });
+        break;
+      }
+    }
+  }
+
+  return seats;
+}
+
+/**
+ * 提取操作
+ */
+function extractActions(lines) {
+  const actions = [];
+  const actionPatterns = [
+    /(\w+): (folds|checks|calls|bets|raises|all-in)(?: \$?([\d.]+))?/i,
+    /(\w+) (fold|check|call|bet|raise|all-in)(?: \$?([\d.]+))?/i
+  ];
+
+  let currentStreet = 'preflop';
+  
+  for (const line of lines) {
+    // 检测街道变化
+    if (line.includes('*** FLOP ***') || line.includes('Flop:')) {
+      currentStreet = 'flop';
+      continue;
+    }
+    if (line.includes('*** TURN ***') || line.includes('Turn:')) {
+      currentStreet = 'turn';
+      continue;
+    }
+    if (line.includes('*** RIVER ***') || line.includes('River:')) {
+      currentStreet = 'river';
+      continue;
+    }
+
+    for (const pattern of actionPatterns) {
+      const match = line.match(pattern);
+      if (match) {
+        actions.push({
+          player: match[1],
+          action: match[2].toLowerCase(),
+          amount: match[3] ? parseFloat(match[3]) : 0,
+          street: currentStreet
+        });
+        break;
+      }
+    }
+  }
+
+  return actions;
+}
+
+/**
+ * 提取公共牌
+ */
+function extractBoard(lines) {
+  const board = [];
+  
+  for (const line of lines) {
+    // 匹配公共牌格式
+    const match = line.match(/\[([2-9TJQKA][shdc] [2-9TJQKA][shdc] [2-9TJQKA][shdc](?: [2-9TJQKA][shdc])?(?: [2-9TJQKA][shdc])?)\]/);
+    if (match) {
+      const cards = match[1].split(' ');
+      board.push(...cards);
+    }
+  }
+
+  return board;
+}
+
+/**
+ * 提取底池
+ */
+function extractPot(lines) {
+  for (const line of lines) {
+    const match = line.match(/Total pot \$?([\d.]+)/i) ||
+                  line.match(/Pot: \$?([\d.]+)/i);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+  }
+  
+  return 0;
+}
+
+/**
+ * 解析多手牌历史
  */
 export function parseMultipleHands(handHistories, platform = null) {
-  // Split by common delimiters
-  const hands = handHistories.split(/\n\n(?=PokerStars|GGPoker|888poker|PartyPoker|Winamax)/);
+  // 尝试用常见分隔符分割
+  let hands = [];
   
-  return hands
-    .filter(hand => hand.trim().length > 0)
-    .map(hand => {
+  // 尝试用空行分割
+  const sections = handHistories.split(/\n\s*\n/);
+  
+  for (const section of sections) {
+    if (section.trim().length > 50) { // 至少50个字符才算一手牌
       try {
-        return parseHandHistory(hand.trim(), platform);
-      } catch (error) {
-        console.error('Failed to parse hand:', error.message);
-        return null;
+        const parsed = parseHandHistory(section.trim(), platform);
+        if (parsed.id && parsed.actions.length > 0) {
+          hands.push(parsed);
+        }
+      } catch (e) {
+        // 跳过无法解析的部分
+        console.warn('Failed to parse section:', e.message);
       }
-    })
-    .filter(hand => hand !== null);
+    }
+  }
+
+  // 如果没有成功解析，尝试整体解析
+  if (hands.length === 0) {
+    try {
+      const parsed = parseHandHistory(handHistories, platform);
+      if (parsed.id) {
+        hands.push(parsed);
+      }
+    } catch (e) {
+      console.warn('Failed to parse as single hand:', e.message);
+    }
+  }
+
+  return hands;
 }
 
 /**
- * Extract key moments from a hand for analysis
+ * 分析手牌，提取关键决策点
  */
-export function extractKeyMoments(parsedHand) {
-  const keyMoments = [];
-  const { actions, seats } = parsedHand;
+export function analyzeHandDecisions(hand) {
+  const decisions = [];
+  const { actions, seats, board } = hand;
   
-  // Track pot size and player stacks
-  let currentPot = parsedHand.smallBlind + parsedHand.bigBlind;
-  const playerStacks = {};
-  seats.forEach(seat => {
-    playerStacks[seat.playerName] = seat.stackSize;
-  });
-
-  // Analyze each action
-  actions.forEach((action, index) => {
-    const { player, action: actionType, amount } = action;
+  // 找到Hero（通常是第一个玩家或特定标记）
+  const hero = seats[0]?.playerName || 'Hero';
+  
+  let currentStreet = 'preflop';
+  let potSize = hand.smallBlind + hand.bigBlind;
+  
+  for (let i = 0; i < actions.length; i++) {
+    const action = actions[i];
     
-    // Track significant actions
-    if (['bets', 'raises', 'all-in'].includes(actionType)) {
-      keyMoments.push({
-        type: 'aggressive',
-        player,
-        action: actionType,
-        amount,
-        potSize: currentPot,
-        street: getStreet(index, actions),
-        index
+    // 更新街道
+    if (action.street) {
+      currentStreet = action.street;
+    }
+    
+    // 更新底池
+    if (action.amount > 0) {
+      potSize += action.amount;
+    }
+    
+    // 记录Hero的决策
+    if (action.player === hero) {
+      decisions.push({
+        street: currentStreet,
+        action: action.action,
+        amount: action.amount,
+        potSize,
+        position: getPlayerPosition(hero, seats),
+        index: i
       });
     }
-    
-    // Track calls
-    if (actionType === 'calls') {
-      keyMoments.push({
-        type: 'call',
-        player,
-        amount,
-        potSize: currentPot,
-        street: getStreet(index, actions),
-        index
-      });
-    }
-    
-    // Update pot
-    if (amount) {
-      currentPot += amount;
-    }
-  });
+  }
 
-  return keyMoments;
+  return decisions;
 }
 
 /**
- * Determine which street an action is on
+ * 获取玩家位置
  */
-function getStreet(actionIndex, actions) {
-  // Simple heuristic: count board cards
-  // This is a simplified version - real implementation would be more complex
-  const preflopActions = actions.slice(0, 4); // First few actions are preflop
-  if (actionIndex < preflopActions.length) return 'preflop';
-  if (actionIndex < preflopActions.length + 3) return 'flop';
-  if (actionIndex < preflopActions.length + 4) return 'turn';
-  return 'river';
+function getPlayerPosition(playerName, seats) {
+  const positionMap = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB'];
+  const index = seats.findIndex(s => s.playerName === playerName);
+  return positionMap[index] || 'Unknown';
+}
+
+/**
+ * 计算手牌强度（简化版）
+ */
+export function evaluateHandStrength(holeCards, board = []) {
+  if (!holeCards || holeCards.length < 2) return 0;
+  
+  const ranks = holeCards.map(card => RANK_VALUES[card[0]] || 0);
+  const suited = holeCards[0][1] === holeCards[1][1];
+  
+  // 对子
+  if (ranks[0] === ranks[1]) {
+    return ranks[0] / 14 * 100;
+  }
+  
+  // 高牌
+  const highCard = Math.max(...ranks);
+  const lowCard = Math.min(...ranks);
+  
+  // 同花加分
+  const suitedBonus = suited ? 10 : 0;
+  
+  // 连牌加分
+  const connectedBonus = Math.abs(ranks[0] - ranks[1]) <= 2 ? 5 : 0;
+  
+  return (highCard / 14 * 60) + (lowCard / 14 * 20) + suitedBonus + connectedBonus;
+}
+
+/**
+ * 生成手牌摘要
+ */
+export function generateHandSummary(hand) {
+  const { seats, actions, board, totalPot } = hand;
+  
+  // 统计操作
+  const actionCounts = {};
+  actions.forEach(a => {
+    actionCounts[a.action] = (actionCounts[a.action] || 0) + 1;
+  });
+  
+  // 找到赢家（简化：假设最后跟注的人赢）
+  const winner = actions.length > 0 ? actions[actions.length - 1].player : 'Unknown';
+  
+  return {
+    handId: hand.id,
+    playerCount: seats.length,
+    totalActions: actions.length,
+    actionCounts,
+    boardLength: board.length,
+    totalPot,
+    winner,
+    duration: 'Unknown' // 可以从时间戳计算
+  };
 }
 
 export default {
   detectPlatform,
   parseHandHistory,
   parseMultipleHands,
-  extractKeyMoments,
+  analyzeHandDecisions,
+  evaluateHandStrength,
+  generateHandSummary,
   PLATFORMS
 };

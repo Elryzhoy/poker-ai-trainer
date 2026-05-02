@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { Navbar } from '@/components/Navbar';
@@ -28,20 +28,27 @@ function App() {
                 <Route path="/training" element={<TrainingPage />} />
                 <Route path="/hand-history" element={
                   <div className="container mx-auto px-4 py-8">
-                    <h1 className="text-3xl font-bold mb-6">Hand History Analysis</h1>
+                    <div className="mb-8">
+                      <h1 className="text-3xl font-bold mb-2">手牌历史分析</h1>
+                      <p className="text-muted-foreground">
+                        上传你的手牌记录，AI会分析你的打法并提供改进建议
+                      </p>
+                    </div>
                     <HandHistoryUpload />
                   </div>
                 } />
-                <Route path="/range" element={
-                  <div className="container mx-auto px-4 py-8">
-                    <h1 className="text-3xl font-bold mb-6">Range Training</h1>
-                    <RangeTraining />
-                  </div>
-                } />
+                <Route path="/range" element={<RangeTraining />} />
                 <Route path="/review" element={
                   <div className="container mx-auto px-4 py-8">
-                    <h1 className="text-3xl font-bold mb-6">Hand Review</h1>
-                    <p className="text-muted-foreground">Coming soon...</p>
+                    <div className="mb-8">
+                      <h1 className="text-3xl font-bold mb-2">手牌复盘</h1>
+                      <p className="text-muted-foreground">
+                        复盘你的关键手牌，学习最优打法
+                      </p>
+                    </div>
+                    <div className="text-center py-12">
+                      <p className="text-lg text-muted-foreground">即将推出...</p>
+                    </div>
                   </div>
                 } />
               </Routes>
